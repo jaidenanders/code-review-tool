@@ -100,3 +100,25 @@ export interface PollResult {
   status: 'pending' | 'authorized'
   token?: string
 }
+
+// ── Multi-file review ──────────────────────────────────────────────────────────
+
+export interface FileInput {
+  filename: string
+  code: string
+}
+
+export interface FileReviewResult {
+  filename: string
+  language: string
+  result: ReviewResult
+  chunks_reviewed: number
+}
+
+export interface MultiFileReviewResponse {
+  session_id: string
+  review_id: string
+  result: ReviewResult
+  per_file: FileReviewResult[]
+  total_chunks: number
+}

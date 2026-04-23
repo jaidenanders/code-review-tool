@@ -3,6 +3,8 @@ import type {
   ReviewRequest,
   ReviewSession,
   ReviewDiff,
+  FileInput,
+  MultiFileReviewResponse,
 } from '../types'
 
 const BASE = '/api/v1'
@@ -52,6 +54,23 @@ export async function deleteSession(id: string): Promise<void> {
     method: 'DELETE',
   })
   if (!res.ok) throw new Error('Failed to delete session')
+}
+
+export async function submitMultiReview(
+  files: FileInput[],
+  sessionId?: string,
+  context?: string,
+): Promise<MultiFileReviewResponse> {
+  const url = sessionId
+    ? `${BASE}/review/multi?session_id=${encodeURIComponent(sessionId)}`
+    : `${BASE}/review/multi`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files, context }),
+  })
+  if (!res.ok) throw new Error('Multi-file review failed')
+  return res.json()
 }
 
 export async function getDiff(

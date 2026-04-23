@@ -4,11 +4,19 @@ import { RepoList } from './components/repos/RepoList'
 import { FileTree } from './components/repos/FileTree'
 import { CodePanel } from './components/review/CodePanel'
 import { ReviewResult } from './components/review/ReviewResult'
+import { SelectedFilesPanel } from './components/review/SelectedFilesPanel'
+import { MultiFileReviewResult } from './components/review/MultiFileReviewResult'
 import { SessionSidebar } from './components/history/SessionSidebar'
 import { DiffViewer } from './components/diff/DiffViewer'
 import { listRepos, getFileTree, getFileContent } from './api/github'
-import { listSessions, getSession, deleteSession } from './api/review'
-import type { GitHubRepo, FileTreeItem, ReviewResult as ReviewResultType, ReviewSession } from './types'
+import { listSessions, getSession, deleteSession, submitMultiReview } from './api/review'
+import type {
+  GitHubRepo,
+  FileTreeItem,
+  ReviewResult as ReviewResultType,
+  ReviewSession,
+  MultiFileReviewResponse,
+} from './types'
 import type { SubmitReviewResponse } from './api/review'
 
 type Tab = 'review' | 'diff'
@@ -20,30 +28,34 @@ export default function App() {
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null)
   const [fileTree, setFileTree] = useState<FileTreeItem[]>([])
   const [treeLoading, setTreeLoading] = useState(false)
+
+  // Single-file mode state
   const [selectedPath, setSelectedPath] = useState<string | undefined>()
   const [fileCode, setFileCode] = useState<string | undefined>()
+
+  // Multi-file mode state
+  const [multiSelectMode, setMultiSelectMode] = useState(false)
+  const [selectedPaths, setSelectedPaths] = useState<string[]>([])
+  const [multiLoading, setMultiLoading] = useState(false)
+  const [multiResult, setMultiResult] = useState<MultiFileReviewResponse | null>(null)
+  const [multiError, setMultiError] = useState<string | null>(null)
 
   const [sessions, setSessions] = useState<ReviewSession[]>([])
   const [activeSession, setActiveSession] = useState<ReviewSession | null>(null)
   const [latestResult, setLatestResult] = useState<ReviewResultType | null>(null)
   const [tab, setTab] = useState<Tab>('review')
-
   const [repoError, setRepoError] = useState<string | null>(null)
 
   const refreshSessions = useCallback(async () => {
     try {
       const list = await listSessions()
       setSessions(list)
-    } catch {
-      // non-fatal
-    }
+    } catch { /* non-fatal */ }
   }, [])
 
   useEffect(() => {
     if (!token) return
-    listRepos(token)
-      .then(setRepos)
-      .catch(e => setRepoError(e.message))
+    listRepos(token).then(setRepos).catch(e => setRepoError(e.message))
     refreshSessions()
   }, [token, refreshSessions])
 
@@ -57,14 +69,15 @@ export default function App() {
     setFileTree([])
     setSelectedPath(undefined)
     setFileCode(undefined)
+    setSelectedPaths([])
+    setMultiResult(null)
     if (!token) return
     setTreeLoading(true)
     try {
-      const tree = await getFileTree(token, ...repo.full_name.split('/') as [string, string], repo.default_branch)
+      const [owner, repoName] = repo.full_name.split('/')
+      const tree = await getFileTree(token, owner, repoName, repo.default_branch)
       setFileTree(tree)
-    } catch {
-      // silently leave tree empty
-    } finally {
+    } catch { /* leave tree empty */ } finally {
       setTreeLoading(false)
     }
   }
@@ -83,17 +96,43 @@ export default function App() {
 
   async function handleReviewComplete(response: SubmitReviewResponse) {
     setLatestResult(response.result)
+    setMultiResult(null)
     const session = await getSession(response.session_id)
     setActiveSession(session)
     setSessions(prev => {
       const idx = prev.findIndex(s => s.id === session.id)
-      if (idx >= 0) {
-        const copy = [...prev]
-        copy[idx] = session
-        return copy
-      }
+      if (idx >= 0) { const copy = [...prev]; copy[idx] = session; return copy }
       return [session, ...prev]
     })
+  }
+
+  async function handleMultiReview() {
+    if (!token || !selectedRepo || selectedPaths.length === 0) return
+    setMultiLoading(true)
+    setMultiError(null)
+    setLatestResult(null)
+    const [owner, repo] = selectedRepo.full_name.split('/')
+    try {
+      const fileInputs = await Promise.all(
+        selectedPaths.map(async path => {
+          const content = await getFileContent(token, owner, repo, path)
+          return { filename: path, code: content.content }
+        }),
+      )
+      const response = await submitMultiReview(fileInputs, activeSession?.id)
+      setMultiResult(response)
+      const session = await getSession(response.session_id)
+      setActiveSession(session)
+      setSessions(prev => {
+        const idx = prev.findIndex(s => s.id === session.id)
+        if (idx >= 0) { const copy = [...prev]; copy[idx] = session; return copy }
+        return [session, ...prev]
+      })
+    } catch (e) {
+      setMultiError(e instanceof Error ? e.message : 'Multi-file review failed')
+    } finally {
+      setMultiLoading(false)
+    }
   }
 
   async function handleSelectSession(session: ReviewSession) {
@@ -101,15 +140,13 @@ export default function App() {
     setActiveSession(full)
     const last = full.reviews[full.reviews.length - 1]
     if (last) setLatestResult(last.result)
+    setMultiResult(null)
   }
 
   async function handleDeleteSession(id: string) {
     await deleteSession(id)
     setSessions(prev => prev.filter(s => s.id !== id))
-    if (activeSession?.id === id) {
-      setActiveSession(null)
-      setLatestResult(null)
-    }
+    if (activeSession?.id === id) { setActiveSession(null); setLatestResult(null); setMultiResult(null) }
   }
 
   if (!token) {
@@ -141,31 +178,46 @@ export default function App() {
           <div className="px-3 py-2 border-b border-gray-100">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Repositories</p>
           </div>
-          <div className="overflow-y-auto flex-1">
-            {repoError && (
-              <p className="text-xs text-red-500 px-4 py-2">{repoError}</p>
-            )}
-            <RepoList
-              repos={repos}
-              onSelect={handleSelectRepo}
-              selectedId={selectedRepo?.id}
-            />
+          <div className="overflow-y-auto" style={{ maxHeight: '40%' }}>
+            {repoError && <p className="text-xs text-red-500 px-4 py-2">{repoError}</p>}
+            <RepoList repos={repos} onSelect={handleSelectRepo} selectedId={selectedRepo?.id} />
           </div>
 
           {selectedRepo && (
             <>
-              <div className="px-3 py-2 border-t border-b border-gray-100">
+              <div className="px-3 py-2 border-t border-b border-gray-100 flex items-center justify-between">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate">
                   {selectedRepo.name}
                 </p>
+                <button
+                  onClick={() => { setMultiSelectMode(m => !m); setSelectedPaths([]); setMultiResult(null) }}
+                  className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${
+                    multiSelectMode
+                      ? 'bg-brand-100 text-brand-700'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {multiSelectMode ? 'Multi ✓' : 'Multi'}
+                </button>
               </div>
               <div className="overflow-y-auto flex-1">
-                <FileTree
-                  items={fileTree}
-                  onSelectFile={handleSelectFile}
-                  selectedPath={selectedPath}
-                  loading={treeLoading}
-                />
+                {multiSelectMode ? (
+                  <FileTree
+                    items={fileTree}
+                    onSelectFile={() => {}}
+                    loading={treeLoading}
+                    multiSelect
+                    selectedPaths={selectedPaths}
+                    onSelectionChange={setSelectedPaths}
+                  />
+                ) : (
+                  <FileTree
+                    items={fileTree}
+                    onSelectFile={handleSelectFile}
+                    selectedPath={selectedPath}
+                    loading={treeLoading}
+                  />
+                )}
               </div>
             </>
           )}
@@ -173,7 +225,6 @@ export default function App() {
 
         {/* Main content */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          {/* Tabs */}
           <div className="bg-white border-b border-gray-200 px-4 flex gap-1 pt-2">
             {(['review', 'diff'] as Tab[]).map(t => (
               <button
@@ -192,25 +243,46 @@ export default function App() {
 
           <div className="flex-1 overflow-y-auto p-6">
             {tab === 'review' && (
-              <div className="grid grid-cols-2 gap-6 h-full">
-                <section>
-                  <h2 className="text-sm font-semibold text-gray-600 mb-3">Code</h2>
-                  <CodePanel
-                    onReviewComplete={handleReviewComplete}
-                    initialCode={fileCode}
-                    filename={selectedPath}
-                    sessionId={activeSession?.id}
-                  />
-                </section>
-                <section>
-                  <h2 className="text-sm font-semibold text-gray-600 mb-3">Result</h2>
-                  {latestResult ? (
-                    <ReviewResult result={latestResult} />
-                  ) : (
-                    <p className="text-sm text-gray-400">Submit code to see review results.</p>
-                  )}
-                </section>
-              </div>
+              <>
+                {multiSelectMode ? (
+                  /* Multi-file mode */
+                  <div className="space-y-6">
+                    <SelectedFilesPanel
+                      selectedPaths={selectedPaths}
+                      onRemove={path => setSelectedPaths(prev => prev.filter(p => p !== path))}
+                      onReviewAll={handleMultiReview}
+                      loading={multiLoading}
+                    />
+                    {multiError && (
+                      <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-2">
+                        {multiError}
+                      </div>
+                    )}
+                    {multiResult && <MultiFileReviewResult data={multiResult} />}
+                  </div>
+                ) : (
+                  /* Single-file mode */
+                  <div className="grid grid-cols-2 gap-6 h-full">
+                    <section>
+                      <h2 className="text-sm font-semibold text-gray-600 mb-3">Code</h2>
+                      <CodePanel
+                        onReviewComplete={handleReviewComplete}
+                        initialCode={fileCode}
+                        filename={selectedPath}
+                        sessionId={activeSession?.id}
+                      />
+                    </section>
+                    <section>
+                      <h2 className="text-sm font-semibold text-gray-600 mb-3">Result</h2>
+                      {latestResult ? (
+                        <ReviewResult result={latestResult} />
+                      ) : (
+                        <p className="text-sm text-gray-400">Submit code to see review results.</p>
+                      )}
+                    </section>
+                  </div>
+                )}
+              </>
             )}
 
             {tab === 'diff' && (

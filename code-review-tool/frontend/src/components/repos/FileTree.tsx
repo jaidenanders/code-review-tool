@@ -1,13 +1,29 @@
 import type { FileTreeItem } from '../../types'
 
-interface Props {
+interface BaseProps {
   items: FileTreeItem[]
   onSelectFile: (path: string) => void
   selectedPath?: string
   loading?: boolean
 }
 
-export function FileTree({ items, onSelectFile, selectedPath, loading }: Props) {
+interface SingleSelectProps extends BaseProps {
+  multiSelect?: false
+  selectedPaths?: never
+  onSelectionChange?: never
+}
+
+interface MultiSelectProps extends BaseProps {
+  multiSelect: true
+  selectedPaths: string[]
+  onSelectionChange: (paths: string[]) => void
+}
+
+type Props = SingleSelectProps | MultiSelectProps
+
+export function FileTree(props: Props) {
+  const { items, onSelectFile, selectedPath, loading, multiSelect } = props
+
   if (loading) {
     return <div className="text-sm text-gray-400 px-4 py-3">Loading file tree…</div>
   }
@@ -17,24 +33,55 @@ export function FileTree({ items, onSelectFile, selectedPath, loading }: Props) 
     return a.path.localeCompare(b.path)
   })
 
+  function toggle(path: string, checked: boolean) {
+    if (!multiSelect) return
+    const { selectedPaths, onSelectionChange } = props as MultiSelectProps
+    onSelectionChange(
+      checked
+        ? [...selectedPaths, path]
+        : selectedPaths.filter(p => p !== path),
+    )
+  }
+
+  const selectedPaths = multiSelect ? (props as MultiSelectProps).selectedPaths : []
+
   return (
     <ul className="text-sm">
       {sorted.map(item => {
         const name = item.path.split('/').pop() ?? item.path
-        const isSelected = item.path === selectedPath
         const isDir = item.type === 'tree'
+        const isSingleSelected = !multiSelect && item.path === selectedPath
+        const isChecked = multiSelect && !isDir && selectedPaths.includes(item.path)
 
         return (
           <li
             key={item.sha}
             data-type={item.type}
-            onClick={() => !isDir && onSelectFile(item.path)}
             className={`flex items-center gap-2 px-3 py-1.5 transition-colors ${
               isDir ? 'cursor-default text-gray-700' : 'cursor-pointer hover:bg-gray-50 text-gray-600'
-            } ${isSelected ? 'bg-brand-100' : ''}`}
+            } ${isSingleSelected ? 'bg-brand-100' : ''} ${isChecked ? 'bg-brand-50' : ''}`}
+            onClick={() => {
+              if (isDir) return
+              if (!multiSelect) onSelectFile(item.path)
+            }}
           >
-            {isDir ? <FolderIcon /> : <FileIcon />}
-            <span>{name}</span>
+            {/* Left icon: checkbox for blob in multi-select, folder/file icon otherwise */}
+            {multiSelect && !isDir ? (
+              <input
+                type="checkbox"
+                aria-label={name}
+                checked={isChecked}
+                onChange={e => toggle(item.path, e.target.checked)}
+                onClick={e => e.stopPropagation()}
+                className="rounded border-gray-300 text-brand-500 focus:ring-brand-500 shrink-0"
+              />
+            ) : isDir ? (
+              <FolderIcon />
+            ) : (
+              <FileIcon />
+            )}
+
+            <span className="select-none">{name}</span>
           </li>
         )
       })}
