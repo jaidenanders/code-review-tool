@@ -47,6 +47,7 @@ class ReviewService:
         code: str,
         language: Optional[str] = None,
         context: Optional[str] = None,
+        profile: Optional[str] = None,
     ) -> ReviewResult:
         """
         Full pipeline: send code to Ollama, parse response, return ReviewResult.
@@ -56,6 +57,7 @@ class ReviewService:
             code=code,
             language=language,
             context=context,
+            profile=profile,
         )
         return self.parse_response(raw)
 

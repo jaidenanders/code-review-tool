@@ -40,6 +40,7 @@ class ReviewRequest(BaseModel):
     language: Optional[str] = None
     filename: Optional[str] = None
     context: Optional[str] = None  # e.g. "This is a FastAPI route handler"
+    profile: Optional[str] = None  # "general" | "security" | "performance" | "style"
 
 
 # ── Session / History ──────────────────────────────────────────────────────────
@@ -84,3 +85,30 @@ class ReviewDiff(BaseModel):
 
 
 ReviewSession.model_rebuild()
+
+
+# ── Multi-file review ──────────────────────────────────────────────────────────
+
+class FileInput(BaseModel):
+    filename: str
+    code: str
+
+
+class MultiFileReviewRequest(BaseModel):
+    files: list[FileInput] = Field(..., min_length=1, description="At least one file required")
+    context: Optional[str] = None
+
+
+class FileReviewResult(BaseModel):
+    filename: str
+    language: str
+    result: ReviewResult
+    chunks_reviewed: int
+
+
+class MultiFileReviewResponse(BaseModel):
+    session_id: str
+    review_id: str
+    result: ReviewResult          # aggregated across all files
+    per_file: list[FileReviewResult]
+    total_chunks: int
