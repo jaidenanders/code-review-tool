@@ -3,6 +3,7 @@ import { DeviceFlow } from './components/auth/DeviceFlow'
 import { RepoList } from './components/repos/RepoList'
 import { FileTree } from './components/repos/FileTree'
 import { CodePanel } from './components/review/CodePanel'
+import { StreamingCodePanel } from './components/review/StreamingCodePanel'
 import { ReviewResult } from './components/review/ReviewResult'
 import { SelectedFilesPanel } from './components/review/SelectedFilesPanel'
 import { MultiFileReviewResult } from './components/review/MultiFileReviewResult'
@@ -20,6 +21,7 @@ import type {
 import type { SubmitReviewResponse } from './api/review'
 
 type Tab = 'review' | 'diff'
+type ReviewMode = 'batch' | 'stream'
 
 export default function App() {
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('gh_token'))
@@ -44,6 +46,7 @@ export default function App() {
   const [activeSession, setActiveSession] = useState<ReviewSession | null>(null)
   const [latestResult, setLatestResult] = useState<ReviewResultType | null>(null)
   const [tab, setTab] = useState<Tab>('review')
+  const [reviewMode, setReviewMode] = useState<ReviewMode>('stream')
   const [repoError, setRepoError] = useState<string | null>(null)
 
   const refreshSessions = useCallback(async () => {
@@ -262,24 +265,45 @@ export default function App() {
                   </div>
                 ) : (
                   /* Single-file mode */
-                  <div className="grid grid-cols-2 gap-6 h-full">
-                    <section>
-                      <h2 className="text-sm font-semibold text-gray-600 mb-3">Code</h2>
-                      <CodePanel
-                        onReviewComplete={handleReviewComplete}
-                        initialCode={fileCode}
-                        filename={selectedPath}
-                        sessionId={activeSession?.id}
-                      />
-                    </section>
-                    <section>
-                      <h2 className="text-sm font-semibold text-gray-600 mb-3">Result</h2>
-                      {latestResult ? (
-                        <ReviewResult result={latestResult} />
-                      ) : (
-                        <p className="text-sm text-gray-400">Submit code to see review results.</p>
-                      )}
-                    </section>
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      {(['stream', 'batch'] as ReviewMode[]).map(m => (
+                        <button
+                          key={m}
+                          onClick={() => setReviewMode(m)}
+                          className={`text-xs px-3 py-1 rounded-full font-medium transition-colors capitalize ${
+                            reviewMode === m
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                          }`}
+                        >
+                          {m === 'stream' ? 'Streaming' : 'Batch'}
+                        </button>
+                      ))}
+                    </div>
+                    {reviewMode === 'stream' ? (
+                      <StreamingCodePanel sessionId={activeSession?.id} />
+                    ) : (
+                      <div className="grid grid-cols-2 gap-6">
+                        <section>
+                          <h2 className="text-sm font-semibold text-gray-600 mb-3">Code</h2>
+                          <CodePanel
+                            onReviewComplete={handleReviewComplete}
+                            initialCode={fileCode}
+                            filename={selectedPath}
+                            sessionId={activeSession?.id}
+                          />
+                        </section>
+                        <section>
+                          <h2 className="text-sm font-semibold text-gray-600 mb-3">Result</h2>
+                          {latestResult ? (
+                            <ReviewResult result={latestResult} />
+                          ) : (
+                            <p className="text-sm text-gray-400">Submit code to see review results.</p>
+                          )}
+                        </section>
+                      </div>
+                    )}
                   </div>
                 )}
               </>

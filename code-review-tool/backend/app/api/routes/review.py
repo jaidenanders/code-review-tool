@@ -4,6 +4,7 @@ Review & Session API routes.
 Endpoints:
   GET  /review/health              — Check if Ollama is running + list models
   POST /review/                    — Submit single file for review
+  POST /review/stream              — Submit single file for streaming review (SSE)
   POST /review/multi               — Submit multiple files for holistic review
   GET  /review/sessions            — List all sessions
   GET  /review/sessions/{id}       — Get session with full review history
@@ -11,10 +12,12 @@ Endpoints:
   GET  /review/sessions/{id}/diff  — Diff between two reviews
 """
 
+import json
 import os
-from typing import Optional
+from typing import Optional, AsyncGenerator
 
 from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -115,6 +118,74 @@ async def submit_review(
         "review_id": review_id,
         "result": result.model_dump(),
     }
+
+
+# ─────────────────────────────────────────────
+# Streaming review (SSE)
+# ─────────────────────────────────────────────
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/stream")
+async def stream_review(
+    request: ReviewRequest,
+    session_id: Optional[str] = Query(None, description="Attach to existing session"),
+    ollama: OllamaService = Depends(get_ollama),
+    review_svc: ReviewService = Depends(get_review_service),
+    session_svc: SessionService = Depends(get_session_service),
+):
+    """Stream review tokens via Server-Sent Events.
+
+    Emits:
+      ``event: token``  — one per LLM token, ``data: {"text": "..."}``
+      ``event: result`` — final parsed result with session/review IDs
+      ``event: error``  — if Ollama is unreachable, ``data: {"message": "..."}``
+    """
+    if session_id is None:
+        session_id = await session_svc.create_session(filename=request.filename)
+
+    language = request.language
+    if not language and request.filename:
+        language = detect_language(request.filename)
+        if language == "unknown":
+            language = None
+
+    async def event_stream() -> AsyncGenerator[str, None]:
+        accumulated = []
+        try:
+            async for token in ollama.stream_review_code(
+                code=request.code,
+                language=language,
+                context=request.context,
+            ):
+                accumulated.append(token)
+                yield _sse("token", {"text": token})
+        except RuntimeError as exc:
+            yield _sse("error", {"message": str(exc)})
+            return
+
+        raw = "".join(accumulated)
+        try:
+            result = review_svc.parse_response(raw)
+        except Exception:
+            result = review_svc.parse_response("")
+
+        try:
+            review_id = await session_svc.save_review(
+                session_id=session_id, code=request.code, result=result
+            )
+        except ValueError:
+            review_id = ""
+
+        yield _sse("result", {
+            "session_id": session_id,
+            "review_id": review_id,
+            "result": result.model_dump(),
+        })
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ─────────────────────────────────────────────
