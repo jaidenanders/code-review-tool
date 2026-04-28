@@ -40,6 +40,7 @@ class ReviewRequest(BaseModel):
     language: Optional[str] = None
     filename: Optional[str] = None
     context: Optional[str] = None  # e.g. "This is a FastAPI route handler"
+    profile: Optional[str] = None  # "general" | "security" | "performance" | "style"
 
 
 # ── Session / History ──────────────────────────────────────────────────────────

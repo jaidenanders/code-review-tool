@@ -187,7 +187,7 @@ async def test_review_calls_ollama_and_returns_result(service):
     result = await service.review(code="print('hi')", language="python")
 
     service.ollama.review_code.assert_called_once_with(
-        code="print('hi')", language="python", context=None
+        code="print('hi')", language="python", context=None, profile=None
     )
     assert isinstance(result, ReviewResult)
     assert result.score == 62

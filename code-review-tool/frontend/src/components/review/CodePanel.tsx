@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react'
-import { submitReview, checkHealth } from '../../api/review'
+import { submitReview, checkHealth, getProfiles } from '../../api/review'
 import type { SubmitReviewResponse } from '../../api/review'
+import { ProfileSelector } from './ProfileSelector'
+import type { ProfileId, ReviewProfile } from '../../types'
+
+const DEFAULT_PROFILES: ReviewProfile[] = [
+  { id: 'general', name: 'General', description: 'Balanced review covering bugs, style, security, and performance.' },
+  { id: 'security', name: 'Security', description: 'Deep-dive into vulnerabilities, injection flaws, and secrets.' },
+  { id: 'performance', name: 'Performance', description: 'Focus on algorithmic complexity and runtime bottlenecks.' },
+  { id: 'style', name: 'Style', description: 'Focus on readability, naming conventions, and code organisation.' },
+]
 
 interface Props {
   onReviewComplete: (response: SubmitReviewResponse) => void
@@ -14,11 +23,14 @@ export function CodePanel({ onReviewComplete, initialCode = '', filename, sessio
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [offline, setOffline] = useState(false)
+  const [profile, setProfile] = useState<ProfileId>('general')
+  const [profiles, setProfiles] = useState<ReviewProfile[]>(DEFAULT_PROFILES)
 
   useEffect(() => {
     checkHealth()
       .then(h => setOffline(h.ollama === 'offline'))
       .catch(() => setOffline(true))
+    getProfiles().then(setProfiles).catch(() => { /* use defaults */ })
   }, [])
 
   useEffect(() => {
@@ -31,7 +43,7 @@ export function CodePanel({ onReviewComplete, initialCode = '', filename, sessio
     setError(null)
     try {
       const result = await submitReview(
-        { code, filename, language: guessLanguage(filename) },
+        { code, filename, language: guessLanguage(filename), profile },
         sessionId,
       )
       onReviewComplete(result)
@@ -63,6 +75,13 @@ export function CodePanel({ onReviewComplete, initialCode = '', filename, sessio
         value={code}
         onChange={e => setCode(e.target.value)}
         spellCheck={false}
+      />
+
+      <ProfileSelector
+        profiles={profiles}
+        selected={profile}
+        onSelect={setProfile}
+        disabled={loading}
       />
 
       {error && (

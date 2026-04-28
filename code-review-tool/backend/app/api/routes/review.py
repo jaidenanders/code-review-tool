@@ -27,6 +27,7 @@ from app.services.session_service import SessionService
 from app.services.language_service import detect_language
 from app.services.chunker_service import chunk_code, format_chunk_for_review
 from app.services.aggregator_service import aggregate_results
+from app.services.profile_service import list_profiles
 from app.schemas.review import (
     ReviewRequest,
     ReviewResult,
@@ -52,6 +53,19 @@ def get_review_service(ollama: OllamaService = Depends(get_ollama)) -> ReviewSer
 
 def get_session_service(db: AsyncSession = Depends(get_db)) -> SessionService:
     return SessionService(db=db)
+
+
+# ─────────────────────────────────────────────
+# Profiles
+# ─────────────────────────────────────────────
+
+@router.get("/profiles")
+async def get_profiles():
+    """List all available review profiles."""
+    return [
+        {"id": p.id, "name": p.name, "description": p.description}
+        for p in list_profiles()
+    ]
 
 
 # ─────────────────────────────────────────────
@@ -100,6 +114,7 @@ async def submit_review(
             code=request.code,
             language=language,
             context=request.context,
+            profile=request.profile,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -159,6 +174,7 @@ async def stream_review(
                 code=request.code,
                 language=language,
                 context=request.context,
+                profile=request.profile,
             ):
                 accumulated.append(token)
                 yield _sse("token", {"text": token})

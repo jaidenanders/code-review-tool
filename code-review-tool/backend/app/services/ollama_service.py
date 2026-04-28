@@ -12,6 +12,7 @@ Responsibilities:
 from typing import Optional, AsyncGenerator
 import json
 import httpx
+from app.services.profile_service import get_profile
 
 
 class OllamaService:
@@ -58,16 +59,16 @@ class OllamaService:
         code: str,
         language: Optional[str],
         context: Optional[str] = None,
+        profile: Optional[str] = None,
     ) -> str:
-        """
-        Build a structured prompt that instructs the model to return
-        a parseable review in a specific format.
-        """
+        """Build a structured prompt, optionally injecting a review-profile focus."""
         lang_line = f"Language: {language}" if language else "Language: unknown"
         context_line = f"Context: {context}\n" if context else ""
 
-        return f"""You are an expert code reviewer. Analyze the following code and respond in EXACTLY this format — no extra commentary before or after:
+        prof = get_profile(profile)
+        focus_block = f"\n{prof.focus_instructions}\n" if prof.focus_instructions else ""
 
+        return f"""You are an expert code reviewer. Analyze the following code and respond in EXACTLY this format — no extra commentary before or after:{focus_block}
 SUMMARY: <one paragraph summary of overall code quality>
 
 SCORE: <integer 0-100 representing overall quality>
@@ -97,6 +98,7 @@ Code to review:
         code: str,
         language: Optional[str] = None,
         context: Optional[str] = None,
+        profile: Optional[str] = None,
     ) -> str:
         """
         Send code to Ollama for review and return the full response string.
@@ -113,7 +115,7 @@ Code to review:
             RuntimeError: If Ollama is unreachable
             ValueError: If the model returns an empty response
         """
-        prompt = self.build_prompt(code=code, language=language, context=context)
+        prompt = self.build_prompt(code=code, language=language, context=context, profile=profile)
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
@@ -149,6 +151,7 @@ Code to review:
         code: str,
         language: Optional[str] = None,
         context: Optional[str] = None,
+        profile: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """Stream code review tokens from Ollama one at a time.
 
@@ -158,7 +161,7 @@ Code to review:
         Raises:
             RuntimeError: If Ollama is unreachable or times out.
         """
-        prompt = self.build_prompt(code=code, language=language, context=context)
+        prompt = self.build_prompt(code=code, language=language, context=context, profile=profile)
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:

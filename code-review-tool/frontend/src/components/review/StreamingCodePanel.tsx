@@ -1,6 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSseReview } from '../../hooks/useSseReview'
 import { ReviewResult } from './ReviewResult'
+import { ProfileSelector } from './ProfileSelector'
+import { getProfiles } from '../../api/review'
+import type { ProfileId, ReviewProfile } from '../../types'
+
+const DEFAULT_PROFILES: ReviewProfile[] = [
+  { id: 'general', name: 'General', description: 'Balanced review covering bugs, style, security, and performance.' },
+  { id: 'security', name: 'Security', description: 'Deep-dive into vulnerabilities, injection flaws, and secrets.' },
+  { id: 'performance', name: 'Performance', description: 'Focus on algorithmic complexity and runtime bottlenecks.' },
+  { id: 'style', name: 'Style', description: 'Focus on readability, naming conventions, and code organisation.' },
+]
 
 interface Props {
   sessionId?: string
@@ -9,11 +19,17 @@ interface Props {
 export function StreamingCodePanel({ sessionId }: Props) {
   const [code, setCode] = useState('')
   const [filename, setFilename] = useState('')
+  const [profile, setProfile] = useState<ProfileId>('general')
+  const [profiles, setProfiles] = useState<ReviewProfile[]>(DEFAULT_PROFILES)
   const { status, tokens, result, error, startReview, reset } = useSseReview()
+
+  useEffect(() => {
+    getProfiles().then(setProfiles).catch(() => { /* use defaults */ })
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    await startReview({ code, filename: filename || undefined }, sessionId)
+    await startReview({ code, filename: filename || undefined, profile }, sessionId)
   }
 
   const isStreaming = status === 'streaming'
@@ -52,6 +68,13 @@ export function StreamingCodePanel({ sessionId }: Props) {
         placeholder="Paste your code here…"
         rows={12}
         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-400 resize-y"
+      />
+
+      <ProfileSelector
+        profiles={profiles}
+        selected={profile}
+        onSelect={setProfile}
+        disabled={isStreaming}
       />
 
       {isError && (

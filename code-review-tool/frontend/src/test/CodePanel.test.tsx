@@ -6,17 +6,20 @@ import { CodePanel } from '../components/review/CodePanel'
 vi.mock('../api/review', () => ({
   submitReview: vi.fn(),
   checkHealth: vi.fn(),
+  getProfiles: vi.fn(),
 }))
 
-import { submitReview, checkHealth } from '../api/review'
+import { submitReview, checkHealth, getProfiles } from '../api/review'
 import { mockReviewResult } from './fixtures'
 
 const mockSubmit = vi.mocked(submitReview)
 const mockHealth = vi.mocked(checkHealth)
+const mockGetProfiles = vi.mocked(getProfiles)
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockHealth.mockResolvedValue({ ollama: 'online', models: ['codellama'], active_model: 'codellama' })
+  mockGetProfiles.mockResolvedValue([])
 })
 
 describe('CodePanel', () => {

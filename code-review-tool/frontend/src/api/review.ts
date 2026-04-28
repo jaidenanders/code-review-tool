@@ -5,6 +5,7 @@ import type {
   ReviewDiff,
   FileInput,
   MultiFileReviewResponse,
+  ReviewProfile,
 } from '../types'
 
 const BASE = '/api/v1'
@@ -13,6 +14,12 @@ export interface SubmitReviewResponse {
   session_id: string
   review_id: string
   result: import('../types').ReviewResult
+}
+
+export async function getProfiles(): Promise<ReviewProfile[]> {
+  const res = await fetch(`${BASE}/review/profiles`)
+  if (!res.ok) throw new Error('Failed to load profiles')
+  return res.json()
 }
 
 export async function checkHealth(): Promise<OllamaHealth> {

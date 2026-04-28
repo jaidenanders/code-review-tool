@@ -53,11 +53,20 @@ export interface ReviewResult {
   raw_response: string
 }
 
+export type ProfileId = 'general' | 'security' | 'performance' | 'style'
+
+export interface ReviewProfile {
+  id: ProfileId
+  name: string
+  description: string
+}
+
 export interface ReviewRequest {
   code: string
   language?: string
   filename?: string
   context?: string
+  profile?: ProfileId
 }
 
 export interface SessionReview {
