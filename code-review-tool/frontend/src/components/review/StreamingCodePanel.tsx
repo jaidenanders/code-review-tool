@@ -4,18 +4,16 @@ import { ReviewResult } from './ReviewResult'
 
 interface Props {
   sessionId?: string
-  onDone?: (sessionId: string, reviewId: string) => void
 }
 
-export function StreamingCodePanel({ sessionId, onDone }: Props) {
+export function StreamingCodePanel({ sessionId }: Props) {
   const [code, setCode] = useState('')
   const [filename, setFilename] = useState('')
   const { status, tokens, result, error, startReview, reset } = useSseReview()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const res = await startReview({ code, filename: filename || undefined }, sessionId)
-    return res
+    await startReview({ code, filename: filename || undefined }, sessionId)
   }
 
   const isStreaming = status === 'streaming'

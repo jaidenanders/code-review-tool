@@ -1,0 +1,28 @@
+# Development overrides — use alongside docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Changes vs production:
+#   - backend: hot-reload via --reload, source mounted as volume, SQLite default
+#   - db/ollama: same as prod (services you don't want to rerun on every code change)
+#   - frontend: not included — run `npm run dev` locally for instant HMR
+
+version: "3.9"
+
+services:
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app          # live source mount for hot reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-codellama}
+      # Use SQLite in dev so Postgres isn't required for quick iteration
+      DATABASE_URL: sqlite+aiosqlite:///./dev.db
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
